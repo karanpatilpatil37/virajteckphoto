@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Photo Upload System</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 10px; text-align: center; }
+    img { border-radius: 10px; }
+    button { margin: 2px; padding: 5px 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <h2>📸 Upload Photo</h2>
+
+  <input type="file" id="photoInput" />
+  <br><br>
+
+  <img id="preview" width="200" style="display:none;" />
+  <br><br>
+
+  <button onclick="handleUpload()">Upload Photo</button>
+
+  <hr>
+
+  <h3>📂 Uploaded Photos</h3>
+
+  <table border="1">
+    <thead>
+      <tr>
+        <th>Sr No</th>
+        <th>Photo</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="gallery"></tbody>
+  </table>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+    const SUPABASE_URL = 'https://rqhnnkryqhpxzzdidvnz.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_xhJFBmdl4hkBEsvI-foxIA_aXhMENSa';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    const input = document.getElementById("photoInput")
+    const preview = document.getElementById("preview")
+
+    let editId = null
+
+    // Preview
+    input.addEventListener("change", function(e) {
+      const file = e.target.files[0]
+      if (!file) return
+
+      preview.src = URL.createObjectURL(file)
+      preview.style.display = "block"
+    })
+
+    // Upload / Update
+    window.handleUpload = async function () {
+      const file = input.files[0]
+
+      if (!file) {
+        alert("Select photo first")
+        return
+      }
+
+      const fileName = Date.now() + "_" + file.name
+
+      // Upload to Storage
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(fileName, file)
+
+      if (uploadError) {
+        alert("Upload Error: " + uploadError.message)
+        return
+      }
+
+      // Get URL
+      const { data } = supabase.storage
+        .from('photos')
+        .getPublicUrl(fileName)
+
+      const fileUrl = data.publicUrl
+
+      if (editId) {
+        // UPDATE
+        await supabase
+          .from('uploads')
+          .update({ file_url: fileUrl })
+          .eq('id', editId)
+
+        alert("✅ Updated Successfully")
+        editId = null
+      } else {
+        // INSERT
+        await supabase
+          .from('uploads')
+          .insert([
+            {
+              name: file.name,
+              file_url: fileUrl
+            }
+          ])
+
+        alert("✅ Uploaded Successfully")
+      }
+
+      input.value = ""
+      preview.style.display = "none"
+
+      loadPhotos()
+    }
+
+    // Load Photos
+    async function loadPhotos() {
+      const { data, error } = await supabase
+        .from('uploads')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.log(error)
+        return
+      }
+
+      const gallery = document.getElementById("gallery")
+      gallery.innerHTML = ""
+
+      data.forEach((item, index) => {
+        const row = document.createElement("tr")
+
+        // Sr No
+        const sr = document.createElement("td")
+        sr.innerText = index + 1
+
+        // Photo
+        const photo = document.createElement("td")
+        const img = document.createElement("img")
+        img.src = item.file_url
+        img.width = 100
+        photo.appendChild(img)
+
+        // Actions
+        const action = document.createElement("td")
+
+        // Edit Button
+        const editBtn = document.createElement("button")
+        editBtn.innerText = "Edit"
+        editBtn.onclick = () => {
+          editId = item.id
+          alert("Select new photo to update")
+        }
+
+        // Delete Button
+        const deleteBtn = document.createElement("button")
+        deleteBtn.innerText = "Delete"
+        deleteBtn.onclick = async () => {
+          if (confirm("Delete this photo?")) {
+            await supabase
+              .from('uploads')
+              .delete()
+              .eq('id', item.id)
+
+            loadPhotos()
+          }
+        }
+
+        action.appendChild(editBtn)
+        action.appendChild(deleteBtn)
+
+        row.appendChild(sr)
+        row.appendChild(photo)
+        row.appendChild(action)
+
+        gallery.appendChild(row)
+      })
+    }
+
+    loadPhotos()
+
+  </script>
+
+</body>
+</html>
